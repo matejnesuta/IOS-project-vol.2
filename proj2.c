@@ -12,7 +12,7 @@
 #define TI 1000
 #define TB 1000
 
-sem_t * printMutex = NULL;
+sem_t *printMutex = NULL;
 
 typedef struct
 {
@@ -22,11 +22,10 @@ typedef struct
     int tb;
 } parameters_t;
 
-typedef struct 
+typedef struct
 {
     int printCount;
-}sharedMemory_t;
-
+} sharedMemory_t;
 
 void errors(int errNum)
 {
@@ -72,45 +71,46 @@ int paramControl(int argc, char *argv[], parameters_t *params)
     return 0;
 }
 
-void semaphoresInit(){
+void semaphoresInit()
+{
     printMutex = sem_open("printMutex", O_CREAT | O_EXCL, 0666, 1);
-    
-    if (printMutex == SEM_FAILED) {
+
+    if (printMutex == SEM_FAILED)
+    {
         errors(5);
     }
-
 }
 
-void oxygen(int id, sharedMemory_t * memory, parameters_t * params)
+void oxygen(int id, sharedMemory_t *memory, parameters_t *params)
 {
     sem_wait(printMutex);
-    memory->printCount+=1;
-    printf("%d: O %d: started\n",memory->printCount, id);
+    memory->printCount += 1;
+    printf("%d: O %d: started\n", memory->printCount, id);
     sem_post(printMutex);
 
     srand(time(NULL) * getpid());
     usleep(1000 * (rand() % (params->ti + 1)));
 
     sem_wait(printMutex);
-    memory->printCount+=1;
-    printf("%d: O %d: going to queue\n",memory->printCount, id);
+    memory->printCount += 1;
+    printf("%d: O %d: going to queue\n", memory->printCount, id);
     sem_post(printMutex);
     exit(0);
 }
 
-void hydrogen(int id, sharedMemory_t * memory, parameters_t * params)
+void hydrogen(int id, sharedMemory_t *memory, parameters_t *params)
 {
     sem_wait(printMutex);
-    memory->printCount+=1;
-    printf("%d: H %d: started\n",memory->printCount, id);
+    memory->printCount += 1;
+    printf("%d: H %d: started\n", memory->printCount, id);
     sem_post(printMutex);
 
     srand(time(NULL) * getpid());
     usleep(1000 * (rand() % (params->ti + 1)));
 
     sem_wait(printMutex);
-    memory->printCount+=1;
-    printf("%d: H %d: going to queue\n",memory->printCount, id);
+    memory->printCount += 1;
+    printf("%d: H %d: going to queue\n", memory->printCount, id);
     sem_post(printMutex);
     exit(0);
 }
@@ -119,10 +119,10 @@ int main(int argc, char *argv[])
 {
     parameters_t params;
     paramControl(argc, argv, &params);
-    
-    sharedMemory_t *memory = mmap(NULL, sizeof(sharedMemory_t), 
-    PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    memory->printCount=0;
+
+    sharedMemory_t *memory = mmap(NULL, sizeof(sharedMemory_t),
+                                  PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    memory->printCount = 0;
 
     semaphoresInit();
 
@@ -151,8 +151,8 @@ int main(int argc, char *argv[])
             errors(4);
         }
     }
-    while (wait(NULL) > 0);
-    
+    while (wait(NULL) > 0)
+        ;
 
     return 0;
 }
