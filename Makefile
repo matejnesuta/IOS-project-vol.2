@@ -26,4 +26,5 @@ leaks: $(EXECUTABLE)
 
 clean:
 	rm -r $(EXECUTABLE)
+	rm vgcore*
 	rm -r *zip
