@@ -25,6 +25,9 @@ typedef struct
 typedef struct
 {
     int printCount;
+    int molecules;
+    int numberOfO;
+    int numberOfH;
 } sharedMemory_t;
 
 void errors(int errNum)
@@ -69,6 +72,12 @@ int paramControl(int argc, char *argv[], parameters_t *params)
         errors(3);
     }
     return 0;
+}
+
+void semaphoresClear()
+{
+    sem_close(printMutex);
+    sem_unlink("printMutex");
 }
 
 void semaphoresInit()
