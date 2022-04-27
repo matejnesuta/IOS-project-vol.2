@@ -90,11 +90,12 @@ void semaphoresInit()
     }
 }
 
-void oxygen(int id, sharedMemory_t *memory, parameters_t *params)
+void oxygen(int id, sharedMemory_t *memory, parameters_t *params, 
+    FILE * pFile)
 {
     sem_wait(printMutex);
     memory->printCount += 1;
-    printf("%d: O %d: started\n", memory->printCount, id);
+    fprintf(pFile, "%d: O %d: started\n", memory->printCount, id);
     sem_post(printMutex);
 
     srand(time(NULL) * getpid());
@@ -102,16 +103,19 @@ void oxygen(int id, sharedMemory_t *memory, parameters_t *params)
 
     sem_wait(printMutex);
     memory->printCount += 1;
-    printf("%d: O %d: going to queue\n", memory->printCount, id);
+    fprintf(pFile, "%d: O %d: going to queue\n", memory->printCount, id);
     sem_post(printMutex);
+
+    fclose(pFile);
     exit(0);
 }
 
-void hydrogen(int id, sharedMemory_t *memory, parameters_t *params)
+void hydrogen(int id, sharedMemory_t *memory, parameters_t *params,
+    FILE * pFile)
 {
     sem_wait(printMutex);
     memory->printCount += 1;
-    printf("%d: H %d: started\n", memory->printCount, id);
+    fprintf(pFile, "%d: H %d: started\n", memory->printCount, id);
     sem_post(printMutex);
 
     srand(time(NULL) * getpid());
@@ -119,8 +123,10 @@ void hydrogen(int id, sharedMemory_t *memory, parameters_t *params)
 
     sem_wait(printMutex);
     memory->printCount += 1;
-    printf("%d: H %d: going to queue\n", memory->printCount, id);
+    fprintf(pFile, "%d: H %d: going to queue\n", memory->printCount, id);
     sem_post(printMutex);
+
+    fclose (pFile);
     exit(0);
 }
 
@@ -129,10 +135,19 @@ int main(int argc, char *argv[])
     parameters_t params;
     paramControl(argc, argv, &params);
 
+    FILE * pFile;
+    pFile = fopen ("proj2.out","w");
+    if (pFile==NULL)
+    {
+    } 
+
+    setbuf(pFile, NULL);
+
     sharedMemory_t *memory = mmap(NULL, sizeof(sharedMemory_t),
                                   PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     memory->printCount = 0;
-
+    
+    semaphoresClear();
     semaphoresInit();
 
     for (int i = 1; i <= params.no; i++)
@@ -140,7 +155,7 @@ int main(int argc, char *argv[])
         pid_t process = fork();
         if (process == 0)
         {
-            oxygen(i, memory, &params);
+            oxygen(i, memory, &params, pFile);
         }
         else if (process == -1)
         {
@@ -153,7 +168,7 @@ int main(int argc, char *argv[])
         pid_t process = fork();
         if (process == 0)
         {
-            hydrogen(i, memory, &params);
+            hydrogen(i, memory, &params, pFile);
         }
         else if (process == -1)
         {
@@ -162,6 +177,7 @@ int main(int argc, char *argv[])
     }
     while (wait(NULL) > 0)
         ;
-
+    semaphoresClear();
+    fclose (pFile);
     return 0;
 }
