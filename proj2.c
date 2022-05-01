@@ -13,6 +13,12 @@
 #define TB 1000
 
 sem_t *printMutex = NULL;
+sem_t *oxyQueue=NULL;
+sem_t *hydroQueue=NULL;
+sem_t *barrierMutex=NULL;
+sem_t *turnstile=NULL;
+sem_t *turnstile2=NULL;
+
 
 typedef struct
 {
@@ -32,12 +38,17 @@ typedef struct
 
 void errors(int errNum)
 {
-    char messages[5][50] = {
+    char messages[9][50] = {
         "Byl zadan nespravny pocet argumentu.",
         "Na vstupu nebyl zadan celocisleny parametr.",
         "Byly zadany argumenty v nespravnem rozsahu.",
         "Nepodarilo se rozdelit procesy.",
-        "sem_open(3) error"};
+        "printMutex sem_open(3) error",
+        "Nepodarilo se otevrit soubor.",
+        "barrierMutex sem_open(3) error",
+        "turnstile sem_open(3) error",
+        "turnstile2 sem_open(3) error",
+    };
 
     fprintf(stderr, "%s\n", messages[errNum - 1]);
     exit(1);
@@ -77,17 +88,66 @@ int paramControl(int argc, char *argv[], parameters_t *params)
 void semaphoresClear()
 {
     sem_close(printMutex);
-    sem_unlink("printMutex");
+    sem_unlink("xnesut00_printMutex");
+
+    sem_close(barrierMutex);
+    sem_unlink("xnesut00_barrierMutex");
+    sem_close(turnstile);
+    sem_unlink("xnesut00_turnstile");
+    sem_close(turnstile2);
+    sem_unlink("xnesut00_turnstile2");
 }
 
 void semaphoresInit()
 {
-    printMutex = sem_open("printMutex", O_CREAT | O_EXCL, 0666, 1);
-
+    printMutex = sem_open("xnesut00_printMutex", O_CREAT | O_EXCL, 0666, 1);
     if (printMutex == SEM_FAILED)
     {
         errors(5);
     }
+
+    barrierMutex = sem_open("xnesut00_barrierMutex", O_CREAT | O_EXCL, 0666, 1);
+    if (barrierMutex == SEM_FAILED)
+    {
+        errors(7);
+    }
+
+    turnstile = sem_open("xnesut00_turnstile", O_CREAT | O_EXCL, 0666, 1);
+    if (turnstile == SEM_FAILED)
+    {
+        errors(8);
+    }
+
+    turnstile2 = sem_open("xnesut00_turnstile2", O_CREAT | O_EXCL, 0666, 1);
+    if (turnstile2 == SEM_FAILED)
+    {
+        errors(9);
+    }
+}
+
+void barrier(){
+
+//  mutex . wait ()
+//  count += 1
+//  if count == n :
+//  turnstile2 . wait () # lock the second
+//  turnstile . signal () # unlock the first
+//  mutex . signal ()
+
+//  turnstile . wait () # first turnstile
+// turnstile . signal ()
+
+// # critical point
+
+// mutex . wait ()
+// count -= 1
+// if count == 0:
+// turnstile . wait () # lock the first
+// turnstile2 . signal () # unlock the second
+// mutex . signal ()
+
+// turnstile2 . wait () # second turnstile
+// turnstile2 . signal ()
 }
 
 void oxygen(int id, sharedMemory_t *memory, parameters_t *params, 
@@ -139,14 +199,16 @@ int main(int argc, char *argv[])
     pFile = fopen ("proj2.out","w");
     if (pFile==NULL)
     {
+        errors(6);
     } 
 
     setbuf(pFile, NULL);
+    setbuf(stdout, NULL);
 
     sharedMemory_t *memory = mmap(NULL, sizeof(sharedMemory_t),
                                   PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     memory->printCount = 0;
-    
+
     semaphoresClear();
     semaphoresInit();
 
