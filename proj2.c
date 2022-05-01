@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <semaphore.h>
+#include <stdarg.h>
 
 #define TI 1000
 #define TB 1000
@@ -19,6 +20,8 @@ sem_t *barrierMutex=NULL;
 sem_t *turnstile=NULL;
 sem_t *turnstile2=NULL;
 sem_t *mainMutex=NULL;
+sem_t *message=NULL;
+
 
 typedef struct
 {
@@ -32,9 +35,12 @@ typedef struct
 {
     int printCount;
     int molecules;
+    int hydrogenCounter;
+    int oxygenCounter;
     int numberOfO;
     int numberOfH;
     int barrierCounter;
+    int atoms;
 } sharedMemory_t;
 
 void errors(int errNum)
@@ -152,6 +158,18 @@ void semaphoresInit()
     }
 }
 
+FILE * pDebug;
+
+extern inline void debugPrint(const char * fmt, ...){
+    sem_wait(printMutex);
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(pDebug,fmt,args);
+    fflush(pDebug); 
+    va_end(args);
+    sem_post(printMutex);
+}
+
 void barrier(sharedMemory_t *memory){
     //  mutex . wait ()
     sem_wait(barrierMutex);
@@ -171,7 +189,7 @@ void barrier(sharedMemory_t *memory){
     // turnstile . signal ()
     sem_post(turnstile);
     // # critical point
-
+    
     // mutex . wait ()
     sem_wait(barrierMutex);
     // count -= 1
@@ -207,6 +225,58 @@ void oxygen(int id, sharedMemory_t *memory, parameters_t *params,
     fprintf(pFile, "%d: O %d: going to queue\n", memory->printCount, id);
     sem_post(printMutex);
 
+    if (memory->numberOfH <= 1){
+        sem_wait(printMutex);
+        memory->printCount += 1;
+        fprintf(pFile, "%d: O %d: not enough H\n", memory->printCount, id);
+        sem_post(printMutex);    
+        memory->numberOfO -= 1;
+        exit(0);
+    }
+    //  mutex . wait ()
+    sem_wait(mainMutex);
+    //  oxygen += 1
+    memory->oxygenCounter += 1;
+    //  if hydrogen >= 2:
+    if(memory->hydrogenCounter >= 2){
+        //  hydroQueue . signal (2)
+        sem_post(hydroQueue);
+        //  hydrogen -= 2
+        memory->hydrogenCounter -= 2;
+        //  oxyQueue . signal ()
+        sem_post(oxyQueue);
+        //  oxygen -= 1
+        memory->oxygenCounter -= 1;
+    }
+    //  else :
+    else{
+        //  mutex . signal ()
+        sem_post(mainMutex);
+    }
+    //  oxyQueue . wait ()
+    sem_wait(oxyQueue);
+    //  bond ()
+    sem_wait(printMutex);
+    memory->printCount += 1;
+    fprintf(pFile, "%d: O %d: creating molecule %d\n", memory->printCount, id, 
+    memory->molecules);
+    sem_post(printMutex);
+
+    srand(time(NULL) * getpid());
+    usleep(1000 * (rand() % (params->ti + 1)));
+
+    sem_wait(printMutex);
+    memory->printCount += 1;
+    fprintf(pFile, "%d: O %d: molecule %d created\n", memory->printCount, id, 
+    memory->molecules);
+    sem_post(printMutex);
+    //???
+    //  barrier . wait ()
+    barrier(memory);
+    //  mutex . signal ()
+    sem_post(mainMutex);
+    memory->molecules+=1;
+    memory->numberOfO-=1;
     fclose(pFile);
     exit(0);
 }
@@ -227,21 +297,52 @@ void hydrogen(int id, sharedMemory_t *memory, parameters_t *params,
     fprintf(pFile, "%d: H %d: going to queue\n", memory->printCount, id);
     sem_post(printMutex);
 
-//     mutex . wait ()
-// 2 hydrogen += 1
-// 3 if hydrogen >= 2 and oxygen >= 1:
-// 4 hydroQueue . signal (2)
-// 5 hydrogen -= 2
-// 6 oxyQueue . signal ()
-// 7 oxygen -= 1
-// 8 else :
-// 9 mutex . signal ()
-// 10
-// 11 hydroQueue . wait ()
-// 12 bond ()
-// 13
-// 14 barrier . wait ()
+    if (memory->numberOfH <= 1 || memory->numberOfO <= 0){
+        sem_wait(printMutex);
+        memory->printCount += 1;
+        fprintf(pFile, "%d: H %d: not enough O or H\n", memory->printCount, id);
+        sem_post(printMutex);    
+        memory->numberOfO -= 1;
+        exit(0);
+    }
+    //  mutex . wait ()
+    sem_wait(mainMutex);
+    //  hydrogen += 1
+    memory->hydrogenCounter+=1;
+    //  if hydrogen >= 2 and oxygen >= 1:
+    if (memory->hydrogenCounter >=2 && memory->oxygenCounter >= 1){
+        //  hydroQueue . signal (2)
+        sem_post(hydroQueue);
+        sem_post(hydroQueue);
+        //  hydrogen -= 2
+        memory->hydrogenCounter -= 2;
+        //  oxyQueue . signal ()
+        sem_post(oxyQueue);
+        //  oxygen -= 1
+        memory->oxygenCounter -= 1 ;
+    }
+    //  else :
+    else{
+        //  mutex . signal ()
+        sem_post(mainMutex);
+    }
+    //  hydroQueue . wait ()
+    sem_wait(hydroQueue);
+    //  bond ()
+    sem_wait(printMutex);
+    memory->printCount += 1;
+    fprintf(pFile, "%d: H %d: creating molecule %d\n", memory->printCount, id,
+    memory->molecules);
+    sem_post(printMutex);
 
+    sem_wait(printMutex);
+    memory->printCount += 1;
+    fprintf(pFile, "%d: H %d: molecule %d created\n", memory->printCount, id,
+    memory->molecules);
+    sem_post(printMutex);
+        //  barrier . wait ()
+    barrier(memory);
+    memory->numberOfH-=1;
     fclose (pFile);
     exit(0);
 }
@@ -258,6 +359,12 @@ int main(int argc, char *argv[])
         errors(6);
     } 
 
+    pDebug = fopen ("debug.log","w");
+    if (pDebug==NULL)
+    {
+        errors(6);
+    }
+    
     setbuf(pFile, NULL);
     setbuf(stdout, NULL);
 
@@ -265,6 +372,12 @@ int main(int argc, char *argv[])
                                   PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     memory->printCount = 0;
     memory->barrierCounter = 0;
+    memory->hydrogenCounter = 0;
+    memory->oxygenCounter = 0;
+    memory->atoms=0;
+    memory->molecules = 1;
+    memory->numberOfH = params.nh;
+    memory->numberOfO = params.no;
 
     semaphoresClear();
     semaphoresInit();
@@ -298,5 +411,6 @@ int main(int argc, char *argv[])
         ;
     semaphoresClear();
     fclose (pFile);
+    munmap(memory, sizeof(memory));
     return 0;
 }
