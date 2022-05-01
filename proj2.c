@@ -18,7 +18,7 @@ sem_t *hydroQueue=NULL;
 sem_t *barrierMutex=NULL;
 sem_t *turnstile=NULL;
 sem_t *turnstile2=NULL;
-
+sem_t *mainMutex=NULL;
 
 typedef struct
 {
@@ -34,11 +34,12 @@ typedef struct
     int molecules;
     int numberOfO;
     int numberOfH;
+    int barrierCounter;
 } sharedMemory_t;
 
 void errors(int errNum)
 {
-    char messages[9][50] = {
+    char messages[12][50] = {
         "Byl zadan nespravny pocet argumentu.",
         "Na vstupu nebyl zadan celocisleny parametr.",
         "Byly zadany argumenty v nespravnem rozsahu.",
@@ -48,6 +49,9 @@ void errors(int errNum)
         "barrierMutex sem_open(3) error",
         "turnstile sem_open(3) error",
         "turnstile2 sem_open(3) error",
+        "oxyQueue sem_open(3) error",
+        "hydroQueue sem_open(3) error",
+        "mainMutex sem_open(3) error",
     };
 
     fprintf(stderr, "%s\n", messages[errNum - 1]);
@@ -89,13 +93,18 @@ void semaphoresClear()
 {
     sem_close(printMutex);
     sem_unlink("xnesut00_printMutex");
-
     sem_close(barrierMutex);
     sem_unlink("xnesut00_barrierMutex");
     sem_close(turnstile);
     sem_unlink("xnesut00_turnstile");
     sem_close(turnstile2);
     sem_unlink("xnesut00_turnstile2");
+    sem_close(oxyQueue);
+    sem_unlink("xnesut00_oxyQueue");
+    sem_close(hydroQueue);
+    sem_unlink("xnesut00_hydroQueue");
+    sem_close(mainMutex);
+    sem_unlink("xnesut00_mainMutex");
 }
 
 void semaphoresInit()
@@ -112,7 +121,7 @@ void semaphoresInit()
         errors(7);
     }
 
-    turnstile = sem_open("xnesut00_turnstile", O_CREAT | O_EXCL, 0666, 1);
+    turnstile = sem_open("xnesut00_turnstile", O_CREAT | O_EXCL, 0666, 0);
     if (turnstile == SEM_FAILED)
     {
         errors(8);
@@ -123,31 +132,63 @@ void semaphoresInit()
     {
         errors(9);
     }
+
+    oxyQueue = sem_open("xnesut00_oxyQueue", O_CREAT | O_EXCL, 0666, 0);
+    if (oxyQueue == SEM_FAILED)
+    {
+        errors(10);
+    }
+
+    hydroQueue = sem_open("xnesut00_hydroQueue", O_CREAT | O_EXCL, 0666, 0);
+    if (hydroQueue == SEM_FAILED)
+    {
+        errors(11);
+    }
+
+    mainMutex = sem_open("xnesut00_mainMutex", O_CREAT | O_EXCL, 0666, 1);
+    if (mainMutex == SEM_FAILED)
+    {
+        errors(12);
+    }
 }
 
-void barrier(){
+void barrier(sharedMemory_t *memory){
+    //  mutex . wait ()
+    sem_wait(barrierMutex);
+    //  count += 1
+    memory->barrierCounter +=1;
+    //  if count == n :
+    if (memory->barrierCounter == 3){
+        //  turnstile2 . wait () # lock the second
+        //  turnstile . signal () # unlock the first
+        sem_wait(turnstile2);
+        sem_post(turnstile);
+    }
+    //  mutex . signal ()
+    sem_post(barrierMutex);
+    //  turnstile . wait () # first turnstile
+    sem_wait(turnstile);
+    // turnstile . signal ()
+    sem_post(turnstile);
+    // # critical point
 
-//  mutex . wait ()
-//  count += 1
-//  if count == n :
-//  turnstile2 . wait () # lock the second
-//  turnstile . signal () # unlock the first
-//  mutex . signal ()
-
-//  turnstile . wait () # first turnstile
-// turnstile . signal ()
-
-// # critical point
-
-// mutex . wait ()
-// count -= 1
-// if count == 0:
-// turnstile . wait () # lock the first
-// turnstile2 . signal () # unlock the second
-// mutex . signal ()
-
-// turnstile2 . wait () # second turnstile
-// turnstile2 . signal ()
+    // mutex . wait ()
+    sem_wait(barrierMutex);
+    // count -= 1
+    memory->barrierCounter-=1;
+    // if count == 0:
+    if (memory->barrierCounter == 0){
+        // turnstile . wait () # lock the first
+        // turnstile2 . signal () # unlock the second
+        sem_wait(turnstile);
+        sem_post(turnstile2);
+    }
+    // mutex . signal ()
+    sem_post(barrierMutex);
+    // turnstile2 . wait () # second turnstile
+    sem_wait(turnstile2);
+    // turnstile2 . signal ()
+    sem_post(turnstile2);
 }
 
 void oxygen(int id, sharedMemory_t *memory, parameters_t *params, 
@@ -186,6 +227,21 @@ void hydrogen(int id, sharedMemory_t *memory, parameters_t *params,
     fprintf(pFile, "%d: H %d: going to queue\n", memory->printCount, id);
     sem_post(printMutex);
 
+//     mutex . wait ()
+// 2 hydrogen += 1
+// 3 if hydrogen >= 2 and oxygen >= 1:
+// 4 hydroQueue . signal (2)
+// 5 hydrogen -= 2
+// 6 oxyQueue . signal ()
+// 7 oxygen -= 1
+// 8 else :
+// 9 mutex . signal ()
+// 10
+// 11 hydroQueue . wait ()
+// 12 bond ()
+// 13
+// 14 barrier . wait ()
+
     fclose (pFile);
     exit(0);
 }
@@ -208,6 +264,7 @@ int main(int argc, char *argv[])
     sharedMemory_t *memory = mmap(NULL, sizeof(sharedMemory_t),
                                   PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     memory->printCount = 0;
+    memory->barrierCounter = 0;
 
     semaphoresClear();
     semaphoresInit();
