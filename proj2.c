@@ -39,7 +39,7 @@ typedef struct
     int numberOfO;
     int numberOfH;
     int barrierCounter;
-    int atoms;
+    int maxMolecules;
 } sharedMemory_t;
 
 void errors(int errNum)
@@ -202,14 +202,15 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
     sem_wait(printMutex);
     memory->printCount += 1;
     fprintf(pFile, "%d: O %d: going to queue\n", memory->printCount, id);
+    memory->numberOfO ++;
+    int queue = memory->numberOfO;
     sem_post(printMutex);
 
-    if (memory->numberOfH <= 1) {
+    if (queue > memory->maxMolecules) {
         sem_wait(printMutex);
         memory->printCount += 1;
         fprintf(pFile, "%d: O %d: not enough H\n", memory->printCount, id);
         sem_post(printMutex);
-        memory->numberOfO -= 1;
         exit(0);
     }
 
@@ -234,7 +235,6 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
     debugPrint("sem_wait oxyQueue O, %d", id);
     sem_wait(oxyQueue);
 
-    memory->numberOfO -= 1;
     sem_wait(printMutex);
     memory->printCount += 1;
     fprintf(pFile, "%d: O %d: creating molecule %d\n", memory->printCount, id,
@@ -275,14 +275,15 @@ void hydrogen(int id, sharedMemory_t* memory, parameters_t* params,
     sem_wait(printMutex);
     memory->printCount += 1;
     fprintf(pFile, "%d: H %d: going to queue\n", memory->printCount, id);
+    memory->numberOfH ++;
+    int queue = memory->numberOfH;
     sem_post(printMutex);
 
-    if (memory->numberOfH <= 1 || memory->numberOfO <= 0) {
+    if (queue > memory->maxMolecules*2) {
         sem_wait(printMutex);
         memory->printCount += 1;
         fprintf(pFile, "%d: H %d: not enough O or H\n", memory->printCount, id);
         sem_post(printMutex);
-        memory->numberOfH -= 1;
         exit(0);
     }
     debugPrint("sem_wait main mutex H, %d", id);
@@ -311,7 +312,6 @@ void hydrogen(int id, sharedMemory_t* memory, parameters_t* params,
     debugPrint("sem_wait hydroQueue H, %d", id);
     sem_wait(hydroQueue);
 
-    memory->numberOfH -= 1;
     debugPrint("sem_wait post hydroQueue H, %d", id);
     //  bond ()
     sem_wait(printMutex);
@@ -356,10 +356,11 @@ int main(int argc, char* argv[])
     memory->barrierCounter = 0;
     memory->hydrogenCounter = 0;
     memory->oxygenCounter = 0;
-    memory->atoms = 0;
     memory->molecules = 1;
-    memory->numberOfH = params.nh;
-    memory->numberOfO = params.no;
+    memory->numberOfH = 0;
+    memory->numberOfO = 0;
+    memory->maxMolecules = (params.no < (params.nh/2)) 
+        ? params.no : params.nh/2;
 
     semaphoresClear();
     semaphoresInit();
