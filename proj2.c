@@ -161,20 +161,6 @@ void semaphoresInit()
     }
 }
 
-FILE* pDebug;
-
-extern inline void debugPrint(const char* fmt, ...)
-{
-    sem_wait(printMutex);
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(pDebug, fmt, args);
-    putc('\n', pDebug);
-    fflush(pDebug);
-    va_end(args);
-    sem_post(printMutex);
-}
-
 void barrier(sharedMemory_t* memory)
 {
     sem_wait(barrierMutex);
@@ -221,28 +207,24 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
         memory->printCount += 1;
         fprintf(pFile, "%d: O %d: not enough H\n", memory->printCount, id);
         sem_post(printMutex);
+        fclose(pFile);
         exit(0);
     }
 
-    debugPrint("sem_wait mainMutex O, %d", id);
     sem_wait(mainMutex);
     memory->oxygenCounter += 1;
     if (memory->hydrogenCounter >= 2) {
-        debugPrint("sem_post hydroQueue o, %d", id);
         sem_post(hydroQueue);
         sem_post(hydroQueue);
         memory->hydrogenCounter -= 2;
 
-        debugPrint("sem_post oxyQueue O, %d", id);
         sem_post(oxyQueue);
         memory->oxygenCounter -= 1;
     }
     else {
-        debugPrint("sem_post mainMutex o, %d", id);
         sem_post(mainMutex);
     }
 
-    debugPrint("sem_wait oxyQueue O, %d", id);
     sem_wait(oxyQueue);
 
     sem_wait(printMutex);
@@ -270,12 +252,8 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
             sem_post(endMutex);
     }
     sem_post(printMutex);
-    //???
-    //  barrier . wait ()
     barrier(memory);
-    //  mutex . signal ()
 
-    debugPrint("sem_post mainMutex O, %d", id);
     sem_post(mainMutex);
     memory->molecules += 1;
     memory->atoms=0;
@@ -306,36 +284,22 @@ void hydrogen(int id, sharedMemory_t* memory, parameters_t* params,
         memory->printCount += 1;
         fprintf(pFile, "%d: H %d: not enough O or H\n", memory->printCount, id);
         sem_post(printMutex);
+        fclose(pFile);
         exit(0);
     }
-    debugPrint("sem_wait main mutex H, %d", id);
     sem_wait(mainMutex);
     memory->hydrogenCounter += 1;
     if (memory->hydrogenCounter >= 2 && memory->oxygenCounter >= 1) {
-        debugPrint("sem_post hydroQueue H, %d", id);
         sem_post(hydroQueue);
-        debugPrint("sem_post hydroQueue H, %d", id);
         sem_post(hydroQueue);
         memory->hydrogenCounter -= 2;
-        //  oxyQueue . signal ()
-        debugPrint("sem_post oxyQueue H, %d", id);
         sem_post(oxyQueue);
-        //  oxygen -= 1
         memory->oxygenCounter -= 1;
     }
-    //  else :
     else {
-        //  mutex . signal ()
-        debugPrint("sem_post mainMutex H, %d", id);
         sem_post(mainMutex);
     }
-    //  hydroQueue . wait ()
-
-    debugPrint("sem_wait hydroQueue H, %d", id);
     sem_wait(hydroQueue);
-
-    debugPrint("sem_wait post hydroQueue H, %d", id);
-    //  bond ()
     sem_wait(printMutex);
     memory->printCount += 1;
     fprintf(pFile, "%d: H %d: creating molecule %d\n", memory->printCount, id,
@@ -347,18 +311,12 @@ void hydrogen(int id, sharedMemory_t* memory, parameters_t* params,
         sem_post(moleculeSem);
         sem_post(moleculeSem);
     }
-
     sem_wait(moleculeSem);
     sem_wait(printMutex);
     memory->printCount += 1;
     fprintf(pFile, "%d: H %d: molecule %d created\n", memory->printCount, id,
         memory->molecules);
-    // if (memory->molecules == memory->maxMolecules && 
-    // queue/2 == memory->maxMolecules){
-    //     sem_post(endMutex);
-    // }
     sem_post(printMutex);
-    //  barrier . wait ()
     barrier(memory);
     fclose(pFile);
     exit(0);
@@ -375,13 +333,7 @@ int main(int argc, char* argv[])
         errors(6);
     }
 
-    pDebug = fopen("debug.log", "a");
-    if (pDebug == NULL) {
-        errors(6);
-    }
-
     setbuf(pFile, NULL);
-    setbuf(pDebug, NULL);
     setbuf(stdout, NULL);
     sharedMemory_t* memory = mmap(NULL, sizeof(sharedMemory_t),
         PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -398,7 +350,6 @@ int main(int argc, char* argv[])
 
     semaphoresClear();
     semaphoresInit();
-    debugPrint("hello world\n");
     for (int i = 1; i <= params.no; i++) {
         pid_t process = fork();
         if (process == 0) {

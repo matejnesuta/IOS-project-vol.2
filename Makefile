@@ -7,7 +7,8 @@ ZIP_FILE = xnesut00.zip
 
 all:
 #	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
-	$(CC) $(INPUT) $(CFLAGS) -o $(EXECUTABLE)
+	$(CC) $(INPUT) $(CFLAGS) -o $(EXECUTABLE) -lpthread
+
 
 run:
 	./$(EXECUTABLE) $(ARGS)
