@@ -204,19 +204,24 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
     fprintf(pFile, "%d: O %d: going to queue\n", memory->printCount, id);
     sem_post(printMutex);
 
-    if (memory->numberOfH <= 1) {
+    sem_wait(compareMutex);
+    if (memory->numberOfH <=1) {
         sem_wait(printMutex);
         memory->printCount += 1;
         fprintf(pFile, "%d: O %d: not enough H\n", memory->printCount, id);
         sem_post(printMutex);
         memory->numberOfO -= 1;
+        sem_post(compareMutex);
         exit(0);
     }
+
+    memory->numberOfO-=1;
+    sem_post(compareMutex);
 
     debugPrint("sem_wait mainMutex O, %d", id);
     sem_wait(mainMutex);
     memory->oxygenCounter += 1;
-    if (memory->hydrogenCounter >= 2) {
+    if (memory->hydrogenCounter > 0) {
         debugPrint("sem_post hydroQueue o, %d", id);
         sem_post(hydroQueue);
         sem_post(hydroQueue);
@@ -234,7 +239,7 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
     debugPrint("sem_wait oxyQueue O, %d", id);
     sem_wait(oxyQueue);
 
-    memory->numberOfO -= 1;
+    //memory->numberOfO -= 1;
     sem_wait(printMutex);
     memory->printCount += 1;
     fprintf(pFile, "%d: O %d: creating molecule %d\n", memory->printCount, id,
@@ -277,18 +282,21 @@ void hydrogen(int id, sharedMemory_t* memory, parameters_t* params,
     fprintf(pFile, "%d: H %d: going to queue\n", memory->printCount, id);
     sem_post(printMutex);
 
-    if (memory->numberOfH <= 1 || memory->numberOfO <= 0) {
+    sem_wait(compareMutex);
+    if (memory->numberOfH <= 0 || memory->numberOfO <= 0) {
         sem_wait(printMutex);
         memory->printCount += 1;
         fprintf(pFile, "%d: H %d: not enough O or H\n", memory->printCount, id);
         sem_post(printMutex);
-        memory->numberOfH -= 1;
+        sem_post(compareMutex);
         exit(0);
     }
+
+    sem_post(compareMutex);
     debugPrint("sem_wait main mutex H, %d", id);
     sem_wait(mainMutex);
     memory->hydrogenCounter += 1;
-    if (memory->hydrogenCounter >= 2 && memory->oxygenCounter >= 1) {
+    if (memory->hydrogenCounter >= 1 && memory->oxygenCounter >= 0) {
         debugPrint("sem_post hydroQueue H, %d", id);
         sem_post(hydroQueue);
         debugPrint("sem_post hydroQueue H, %d", id);
@@ -309,9 +317,9 @@ void hydrogen(int id, sharedMemory_t* memory, parameters_t* params,
     //  hydroQueue . wait ()
 
     debugPrint("sem_wait hydroQueue H, %d", id);
+    memory->numberOfH-=1;
     sem_wait(hydroQueue);
-
-    memory->numberOfH -= 1;
+    //memory->numberOfH -= 1;
     debugPrint("sem_wait post hydroQueue H, %d", id);
     //  bond ()
     sem_wait(printMutex);
