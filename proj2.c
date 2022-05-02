@@ -86,7 +86,8 @@ int paramControl(int argc, char* argv[], parameters_t* params)
             errors(2);
         }
     }
-    if (params->no < 0 || params->nh < 0 || params->tb < 0 || params->tb > TB || params->ti < 0 || params->ti > TI) {
+    if (params->no < 0 || params->nh < 0 || params->tb < 0 || params->tb > TB ||
+     params->ti < 0 || params->ti > TI || (params->nh == 0 && params->no == 0)){
         errors(3);
     }
     return 0;
@@ -150,7 +151,7 @@ void semaphoresInit()
     if (mainMutex == SEM_FAILED) {
         errors(12);
     }
-    endMutex = sem_open("xnesut00_endMutex", O_CREAT | O_EXCL, 0666, 1);
+    endMutex = sem_open("xnesut00_endMutex", O_CREAT | O_EXCL, 0666, 0);
     if (endMutex == SEM_FAILED) {
         errors(13);
     }
@@ -216,12 +217,10 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
     sem_post(printMutex);
 
     if (queue > memory->maxMolecules) {
-        sem_wait(endMutex);
         sem_wait(printMutex);
         memory->printCount += 1;
         fprintf(pFile, "%d: O %d: not enough H\n", memory->printCount, id);
         sem_post(printMutex);
-        sem_post(endMutex);
         exit(0);
     }
 
@@ -303,12 +302,10 @@ void hydrogen(int id, sharedMemory_t* memory, parameters_t* params,
     sem_post(printMutex);
 
     if (queue > memory->maxMolecules*2) {
-        sem_wait(endMutex);
         sem_wait(printMutex);
         memory->printCount += 1;
         fprintf(pFile, "%d: H %d: not enough O or H\n", memory->printCount, id);
         sem_post(printMutex);
-        sem_post(endMutex);
         exit(0);
     }
     debugPrint("sem_wait main mutex H, %d", id);
@@ -356,10 +353,10 @@ void hydrogen(int id, sharedMemory_t* memory, parameters_t* params,
     memory->printCount += 1;
     fprintf(pFile, "%d: H %d: molecule %d created\n", memory->printCount, id,
         memory->molecules);
-    if (memory->molecules == memory->maxMolecules && 
-    queue/2 == memory->maxMolecules){
-        sem_post(endMutex);
-    }
+    // if (memory->molecules == memory->maxMolecules && 
+    // queue/2 == memory->maxMolecules){
+    //     sem_post(endMutex);
+    // }
     sem_post(printMutex);
     //  barrier . wait ()
     barrier(memory);
