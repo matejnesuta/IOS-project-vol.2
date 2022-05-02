@@ -20,7 +20,8 @@ sem_t* barrierMutex = NULL;
 sem_t* turnstile = NULL;
 sem_t* turnstile2 = NULL;
 sem_t* mainMutex = NULL;
-sem_t* compareMutex = NULL;
+sem_t* endMutex = NULL;
+sem_t* moleculeSem = NULL;
 
 typedef struct
 {
@@ -40,11 +41,12 @@ typedef struct
     int numberOfH;
     int barrierCounter;
     int maxMolecules;
+    int atoms;
 } sharedMemory_t;
 
 void errors(int errNum)
 {
-    char messages[13][50] = {
+    char messages[14][50] = {
         "Byl zadan nespravny pocet argumentu.",
         "Na vstupu nebyl zadan celocisleny parametr.",
         "Byly zadany argumenty v nespravnem rozsahu.",
@@ -57,7 +59,8 @@ void errors(int errNum)
         "oxyQueue sem_open(3) error",
         "hydroQueue sem_open(3) error",
         "mainMutex sem_open(3) error",
-        " sem_open(3) error",
+        "endMutex sem_open(3) error",
+        "moleculeSem sem_open(3) error",
     };
 
     fprintf(stderr, "%s\n", messages[errNum - 1]);
@@ -105,8 +108,10 @@ void semaphoresClear()
     sem_unlink("xnesut00_hydroQueue");
     sem_close(mainMutex);
     sem_unlink("xnesut00_mainMutex");
-    sem_close(compareMutex);
-    sem_unlink("xnesut00_compareMutex");
+    sem_close(endMutex);
+    sem_unlink("xnesut00_endMutex");
+    sem_close(moleculeSem);
+    sem_unlink("xnesut00_moleculeSem");
 }
 
 void semaphoresInit()
@@ -145,9 +150,13 @@ void semaphoresInit()
     if (mainMutex == SEM_FAILED) {
         errors(12);
     }
-    compareMutex = sem_open("xnesut00_compareMutex", O_CREAT | O_EXCL, 0666, 1);
-    if (compareMutex == SEM_FAILED) {
+    endMutex = sem_open("xnesut00_endMutex", O_CREAT | O_EXCL, 0666, 1);
+    if (endMutex == SEM_FAILED) {
         errors(13);
+    }
+    moleculeSem = sem_open("xnesut00_moleculeSem", O_CREAT | O_EXCL, 0666, 0);
+    if (endMutex == SEM_FAILED) {
+        errors(14);
     }
 }
 
@@ -207,10 +216,12 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
     sem_post(printMutex);
 
     if (queue > memory->maxMolecules) {
+        sem_wait(endMutex);
         sem_wait(printMutex);
         memory->printCount += 1;
         fprintf(pFile, "%d: O %d: not enough H\n", memory->printCount, id);
         sem_post(printMutex);
+        sem_post(endMutex);
         exit(0);
     }
 
@@ -239,8 +250,15 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
     memory->printCount += 1;
     fprintf(pFile, "%d: O %d: creating molecule %d\n", memory->printCount, id,
         memory->molecules);
+    memory->atoms++;
     sem_post(printMutex);
+    if (memory->atoms == 3){
+        sem_post(moleculeSem);
+        sem_post(moleculeSem);
+        sem_post(moleculeSem);
+    }
 
+    sem_wait(moleculeSem);
     srand(time(NULL) * getpid());
     usleep(1000 * (rand() % (params->ti + 1)));
 
@@ -248,6 +266,10 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
     memory->printCount += 1;
     fprintf(pFile, "%d: O %d: molecule %d created\n", memory->printCount, id,
         memory->molecules);
+    if (memory->molecules == memory->maxMolecules && 
+        queue == memory->maxMolecules){
+            sem_post(endMutex);
+    }
     sem_post(printMutex);
     //???
     //  barrier . wait ()
@@ -257,6 +279,7 @@ void oxygen(int id, sharedMemory_t* memory, parameters_t* params,
     debugPrint("sem_post mainMutex O, %d", id);
     sem_post(mainMutex);
     memory->molecules += 1;
+    memory->atoms=0;
     fclose(pFile);
     exit(0);
 }
@@ -280,10 +303,12 @@ void hydrogen(int id, sharedMemory_t* memory, parameters_t* params,
     sem_post(printMutex);
 
     if (queue > memory->maxMolecules*2) {
+        sem_wait(endMutex);
         sem_wait(printMutex);
         memory->printCount += 1;
         fprintf(pFile, "%d: H %d: not enough O or H\n", memory->printCount, id);
         sem_post(printMutex);
+        sem_post(endMutex);
         exit(0);
     }
     debugPrint("sem_wait main mutex H, %d", id);
@@ -318,12 +343,23 @@ void hydrogen(int id, sharedMemory_t* memory, parameters_t* params,
     memory->printCount += 1;
     fprintf(pFile, "%d: H %d: creating molecule %d\n", memory->printCount, id,
         memory->molecules);
+    memory->atoms++;
     sem_post(printMutex);
+    if (memory->atoms == 3){
+        sem_post(moleculeSem);
+        sem_post(moleculeSem);
+        sem_post(moleculeSem);
+    }
 
+    sem_wait(moleculeSem);
     sem_wait(printMutex);
     memory->printCount += 1;
     fprintf(pFile, "%d: H %d: molecule %d created\n", memory->printCount, id,
         memory->molecules);
+    if (memory->molecules == memory->maxMolecules && 
+    queue/2 == memory->maxMolecules){
+        sem_post(endMutex);
+    }
     sem_post(printMutex);
     //  barrier . wait ()
     barrier(memory);
@@ -361,6 +397,7 @@ int main(int argc, char* argv[])
     memory->numberOfO = 0;
     memory->maxMolecules = (params.no < (params.nh/2)) 
         ? params.no : params.nh/2;
+    memory->atoms = 0;
 
     semaphoresClear();
     semaphoresInit();
