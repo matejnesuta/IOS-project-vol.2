@@ -1,6 +1,6 @@
 # IOS Project Vol. 2: Semaphores
 The second project I did for my Operating Systems class on BUT FIT. The task is inspired by a molecule synchronization problem from Allen B. Downey's "The Little Book of Semaphores".
-One of the best and most fun projects in the course. Final score: 15/15.
+One of the best and most fun projects in the uni. Final score: 15/15.
 
 ## How to run: 
 
